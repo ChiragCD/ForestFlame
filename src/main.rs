@@ -16,9 +16,10 @@ fn main() -> std::io::Result<()> {
     let mut in_file = File::open(in_name)?;
     let mut in_contents = String::new();
     in_file.read_to_string(&mut in_contents)?;
+    in_contents = format!("({})", in_contents);
 
     let sexp = parse(&in_contents).expect("Invalid - failed to parse sexp");
-    let expr = parse_expr(&sexp);
+    let expr = parse_program(&sexp);
 
     let result = compile_expr(&expr);
 
@@ -30,19 +31,17 @@ global our_code_starts_here
 
 expect_bool:
 mov rdi, 5
-jmp snek_error
+call snek_error
 
 expect_numeric:
 mov rdi, 6
-jmp snek_error
+call snek_error
 
 overflow:
 mov rdi, 7
-jmp snek_error
+call snek_error
 
-our_code_starts_here:
 {}
-ret
 ",
         result
     );

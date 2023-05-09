@@ -25,7 +25,7 @@ fn parse_bind(vec: &Vec<Sexp>) -> Vec<Binding> {
 
 fn parse_identifier(s: &str) -> String {
     let keywords = HashSet::from(["true", "false", "input", "let", "set!", "if", "block", "loop", "break", "add1", "sub1", "isnum", "isbool"]);
-    (!keywords.contains(s)).then(||0).expect("Invalid - parse error - keyword used as identifier!");
+    (!keywords.contains(s)).then(||0).expect("Invalid - parse error - keyword or function name used as identifier!");
     String::from(s)
 }
 
@@ -41,7 +41,21 @@ fn parse_zero_op(sexp: &Sexp) -> Expr {
     }
 }
 
-pub fn parse_expr(sexp: &Sexp) -> Expr {
+fn parse_def(sexp: &Sexp, reserved: &mut HashSet<String>) -> Expr {
+    if let List(vec_def) = sexp { match &vec_def[..] {
+        [Atom(S(op)), List(strings), e] if op == "fun" => {
+            let names: Vec::<String> = strings.iter().map(|s| if let Atom(S(name)) = s {return name.clone()}
+                else {panic!("Invalid - parse error - expected simple string in def!")}).collect();
+            (!names.is_empty()).then(||0).expect("Invalid - parse error - func def expected name!");
+            reserved.insert(names[0].clone()).then(||0).expect("Invalid - parse error - name is already in use!");
+            return FuncDef(names[0].clone(), names[1..].to_vec(), Box::new(parse_expr(e)))
+        },
+        _ => panic!("Invalid - parse error - failed to match def!"),
+    } }
+    panic!("Invalid - parse error - failed to match def!");
+}
+
+fn parse_expr(sexp: &Sexp) -> Expr {
     match sexp {
         Atom(_) => parse_zero_op(sexp),
         List(vec) => {
@@ -66,8 +80,18 @@ pub fn parse_expr(sexp: &Sexp) -> Expr {
                 [Atom(S(op)), e1, e2, e3] if op == "if" => If(Box::new(parse_expr(e1)), Box::new(parse_expr(e2)), Box::new(parse_expr(e3))),
                 [Atom(S(op)), vec_block @ ..] if op == "block" && (!vec_block.is_empty()).then(||true).expect("Invalid - block must have subexpressions!") =>
                     Block(vec_block.iter().map(|e| parse_expr(e)).collect()),
-                _ => panic!("Invalid - parse error! {:?}", vec),
+                // [Atom(S(name)), vec_call @ ..] => FuncCall(name.clone(), vec_call.iter().map(|arg| Box::new(parse_expr(arg))).collect()),
+                _ => panic!("Invalid - parse error - unexpected structure! {:?}", vec),
             }
         },
     }
+}
+
+pub fn parse_program(sexp: &Sexp) -> Expr {
+    let mut reserved = HashSet::<String>::new();
+    if let List(items) = sexp { match &items[..] {
+        [defs @ .., e] => return Program(defs.iter().map(|def| parse_def(def, &mut reserved)).collect(), Box::new(parse_expr(e))),
+        _ => panic!("Invalid - parse error - Program requires main expression!")
+    } }
+    panic!("Invalid - parse error - malformed program!");
 }

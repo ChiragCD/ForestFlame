@@ -9,7 +9,7 @@ pub enum Val {
 }
 
 #[derive(Debug, Clone, Copy, Hash, Eq, PartialEq)]
-pub enum Register { RAX, RBX, RCX, RDX, RSP, RDI, }
+pub enum Register { RAX, RBX, RCX, RDX, RSP, RDI, RSI, RBP, R8, R9}
 
 #[derive(Debug)]
 pub enum Instr {
@@ -36,6 +36,8 @@ pub enum Instr {
     Je(Val),
     Jo(Val),
     Jnz(Val),
+    Call(Val),
+    Ret,
 }
 
 #[derive(Debug)]
@@ -65,4 +67,7 @@ pub enum Expr {
     EBinaryOp(BinaryOp, Box<Expr>, Box<Expr>),
     If(Box<Expr>, Box<Expr>, Box<Expr>),
     Block(Vec<Expr>),
+    FuncDef(String, Vec<String>, Box<Expr>),
+    FuncCall(String, Vec<Box<Expr>>),
+    Program(Vec<Expr>, Box<Expr>),
 }

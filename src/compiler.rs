@@ -1,7 +1,7 @@
-use std::collections::HashSet;
 use std::collections::HashMap;
 use std::cell::RefCell;
 use std::rc::Rc;
+use std::cmp::*;
 
 use crate::types::*;
 
@@ -17,6 +17,7 @@ const STACK_BASE: i64 = 2;
 
 #[derive(Debug, Clone)]
 struct Namespace {
+    func: String,
     h: HashMap<String, Val>,
     break_label: String,
 }
@@ -26,10 +27,11 @@ enum Type { Num, Bool, Unknown, }
 use Type::*;
 
 struct State {
+    defs: HashMap<String, usize>,
     types: HashMap<Val, Type>,
 }
 
-thread_local!(static STATE: Rc<RefCell<State>> = Rc::new(RefCell::new(State{types: HashMap::new(), })));
+thread_local!(static STATE: Rc<RefCell<State>> = Rc::new(RefCell::new(State{types: HashMap::new(), defs: HashMap::new(), })));
 
 fn generate_id(uid: &mut i64) -> i64 {
     *uid += 1;
@@ -54,7 +56,7 @@ fn fail_overflow(v: &mut Vec<Instr>) {
 }
 
 fn get_type(val: &Val) -> Type {
-    // return Unknown;
+    return Unknown;
     if matches!(*val, Imm(_)) {return Num};
     if matches!(*val, ValFalse) {return Bool};
     if matches!(*val, ValTrue) {return Bool};
@@ -88,8 +90,8 @@ fn compile_zero_op(op: &ZeroOp, v: &mut Vec<Instr>, namespace: &mut Namespace) {
         Number(n) => load(v, RAX, &Imm(*n)),
         OpTrue => load(v, RAX, &ValTrue),
         OpFalse => load(v, RAX, &ValFalse),
-        Input => load(v, RAX, &Reg(RDI)),
-        Identifier(s) => load(v, RAX, &namespace.h.get(&s[..]).expect(format!("Unbound variable identifier {}", s).as_str())),
+        Input => (namespace.func == "main").then(|| load(v, RAX, &Reg(RDI))).expect("Invalid - cannot use input outside main"),
+        Identifier(s) => load(v, RAX, &namespace_get(namespace, s)),
     }
 }
 
@@ -209,9 +211,9 @@ fn compile_equal(e1: &Expr, e2: &Expr, v: &mut Vec<Instr>, mut stack: i64, uid: 
     let type_rbx = get_type(&Reg(RBX));
     v.push(Xor(Reg(RBX), Reg(RAX)));
     set_type(&(Reg(RBX)), Unknown);
-    load(v, RCX, &ValTrue);
+    load(v, RBP, &ValTrue);
     load(v, RAX, &ValFalse);
-    v.push(Cmovz(Reg(RAX), Reg(RCX)));
+    v.push(Cmovz(Reg(RAX), Reg(RBP)));
     if matches_type(type_rax, type_rbx) {return};
     set_type(&(Reg(RBX)), Unknown);
     expect_number(v, RBX);
@@ -230,25 +232,70 @@ fn compile_binary_op(op: &BinaryOp, e1: &Expr, e2: &Expr, v: &mut Vec<Instr>, st
     }
 }
 
-fn compile_binding(binding: &Binding, v: &mut Vec<Instr>, stack: &mut i64, uid: &mut i64, namespace: &mut Namespace, must_exist: bool) {
+fn namespace_get(namespace: &Namespace, s: &String) -> Val {
+    namespace.h.get(s).expect(format!("Unbound variable identifier {}", s).as_str()).clone()
+}
+
+fn namespace_add(namespace: &mut Namespace, s: &String, loc: &Val, must_not_exist: bool) {
+    let exists = namespace.h.insert(s.clone(), loc.clone()).is_some();
+    (!(must_not_exist && exists)).then(||0).expect("Duplicate binding");
+}
+
+fn compile_binding(binding: &Binding, v: &mut Vec<Instr>, stack: &mut i64, uid: &mut i64, namespace: &mut Namespace, must_exist: bool, must_not_exist: bool) {
     let Binding(s, e) = binding;
     compile(e, v, *stack, uid, namespace);
     if must_exist {
-        let location = namespace.h.get(s).expect(format!("Unbound variable identifier {}", s).as_str()).clone();
+        let location = namespace_get(namespace, s);
         v.push(IMov(location.clone(), Reg(RAX)));
         set_type(&location, get_type(&Reg(RAX)));
     } else {
         let location = push(v, RAX, stack);
-        namespace.h.insert(s.clone(), location);
+        namespace_add(namespace, s, &location, must_not_exist);
     }
 }
 
 fn compile_let(e: &Expr, vec: &Vec<Binding>, v: &mut Vec<Instr>, mut stack: i64, uid: &mut i64, namespace: &mut Namespace) {
-    let mut set = HashSet::new();
     let mut inner_namespace = namespace.clone();
-    _ = vec.iter().map(|Binding(s,_)| set.insert(s).then(||0).expect("Duplicate binding")).collect::<Vec<_>>();
-    _ = vec.iter().map(|binding| compile_binding(binding, v, &mut stack, uid, &mut inner_namespace, false)).collect::<Vec<_>>();
+    _ = vec.iter().map(|binding| compile_binding(binding, v, &mut stack, uid, &mut inner_namespace, false, false)).collect::<Vec<_>>();
     compile(e, v, stack, uid, &mut inner_namespace);
+}
+
+fn compile_def(e: &Expr, v: &mut Vec<Instr>, uid: &mut i64) {
+    let (name, vec_params, action) = match e {
+        FuncDef(name, vec_params, action) => (name, vec_params, action),
+        _ => panic!("Invalid - Expected a definition!"),
+    };
+    STATE.with(|x| {
+        let mut state = x.borrow_mut();
+        state.defs.insert(name.clone(), vec_params.len()).is_none().then(||0).expect("Invalid - name is already in use!");
+    });
+    v.push(ILabel(Label(format!("def_{}:", name))));
+    let mut namespace = Namespace{h: HashMap::new(), break_label: String::from(""), func: String::from(name)};
+    let locations = vec![RDI, RSI, RDX, RCX, R8, R9];
+    for i in 0..(min(6, vec_params.len())) {namespace_add(&mut namespace, &vec_params[i], &Reg(locations[i]), true)};
+    for i in 6..vec_params.len() {namespace_add(&mut namespace, &vec_params[i], &RegOffset(RSP, 8*(5-(i)) as i64), true)};
+    compile(action, v, STACK_BASE, uid, &mut namespace);
+    v.push(Ret);
+}
+
+fn compile_call(name: &String, args: &Vec<Box<Expr>>, v: &mut Vec<Instr>, stack: &mut i64, uid: &mut i64, namespace: &mut Namespace) {
+    let locations = vec![RDI, RSI, RDX, RCX, R8, R9];
+    for i in 0..(min(6, args.len())) {
+        compile(&args[i], v, *stack, uid, namespace);
+        load(v, locations[i], &Reg(RAX));
+    };
+    for i in (5..(max(0, args.len() as i64 - 1))).rev() {
+        compile(&args[i as usize], v, *stack, uid, namespace);
+        _ = push(v, RAX, stack);
+    };
+    STATE.with(|x| {
+        let state = x.borrow_mut();
+        let length = *state.defs.get(name).expect("Invalid - function not found!");
+        (length == args.len()).then(||0).expect("Invalid - call has wrong number of args!");
+    });
+    v.push(IAdd(Reg(RSP), Imm(8**stack)));
+    v.push(Call(Label(format!("def_{}", name))));
+    v.push(ISub(Reg(RSP), Imm(8**stack)));
 }
 
 fn compile(e: &Expr, v: &mut Vec<Instr>, stack: i64, uid: &mut i64, namespace: &mut Namespace) {
@@ -257,9 +304,17 @@ fn compile(e: &Expr, v: &mut Vec<Instr>, stack: i64, uid: &mut i64, namespace: &
         EUnitaryOp(op, expr) => compile_unitary_op(op, expr, v, stack, uid, namespace),
         EBinaryOp(op, expr1, expr2) => compile_binary_op(op, expr1, expr2, v, stack, uid, namespace),
         Let(vec, e) => compile_let(e, vec, v, stack, uid, namespace),
-        Set(binding) => compile_binding(binding, v, &mut stack.clone(), uid, namespace, true),
+        Set(binding) => compile_binding(binding, v, &mut stack.clone(), uid, namespace, true, false),
         If(expr1, expr2, expr3) => compile_if(expr1, expr2, expr3, v, stack, uid, namespace),
         Block(vec) => vec.iter().map(|e| compile(e, v, stack, uid, namespace)).collect(),
+        FuncDef(_, _, _) => panic!("Invalid - unexpected function def in non global scope!"),
+        FuncCall(name, args) => compile_call(name, args, v, &mut stack.clone(), uid, namespace),
+        Program(defs, e) => {
+            _ = defs.iter().map(|def| compile_def(def, v, uid)).collect::<Vec<_>>();
+            v.push(ILabel(Label(String::from("our_code_starts_here:"))));
+            compile(e, v, stack, uid, namespace);
+            v.push(Ret);
+        }
     }
 }
 
@@ -271,6 +326,10 @@ fn read_val(v: Val) -> String {
         Reg(RDX) => String::from("rdx"),
         Reg(RSP) => String::from("rsp"),
         Reg(RDI) => String::from("rdi"),
+        Reg(RSI) => String::from("rsi"),
+        Reg(RBP) => String::from("rbp"),
+        Reg(R8) => String::from("r8"),
+        Reg(R9) => String::from("r9"),
         ValTrue => String::from("3"),
         ValFalse => String::from("1"),
         Imm(n) => n.to_string(),
@@ -309,12 +368,14 @@ fn stringify(vec: Vec<Instr>) -> String {
         Je(v) => format!("je {}", read_val(v)),
         Jo(v) => format!("jo {}", read_val(v)),
         Jnz(v) => format!("jnz {}", read_val(v)),
+        Call(v) => format!("call {}", read_val(v)),
+        Ret => format!("ret\n"),
     }).collect::<Vec<String>>().iter().fold(String::new(), |accum, i| accum + "\n" + i)
 }
 
 pub fn compile_expr(e: &Expr) -> String {
     let mut instrs = Vec::new();
-    let mut outer_namespace = Namespace{h: HashMap::new(), break_label: String::from("")};
+    let mut outer_namespace = Namespace{h: HashMap::new(), break_label: String::from(""), func: String::from("main")};
     let mut uid = 0;
     compile(e, &mut instrs, STACK_BASE, &mut uid, &mut outer_namespace);
     stringify(instrs)
