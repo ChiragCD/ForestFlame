@@ -9,7 +9,7 @@ pub enum Val {
 }
 
 #[derive(Debug, Clone, Copy, Hash, Eq, PartialEq)]
-pub enum Register { RAX, RBX, RCX, RDX, RSP, RDI, RSI, RBP, R8, R9}
+pub enum Register { RAX, RBX, RCX, RDX, RSP, RDI, RSI, RBP, R8, R9, R15}
 
 #[derive(Debug)]
 pub enum Instr {

@@ -1,0 +1,11 @@
+(fun (print_square n) (print(* n n)))
+(let ((i 1)) (
+    loop (
+        if (= i 10) (break i) (
+            block
+                (print_square i)
+                (set! i (+ i 1))
+        )
+    )
+)
+)

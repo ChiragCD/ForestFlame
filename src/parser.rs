@@ -80,7 +80,7 @@ fn parse_expr(sexp: &Sexp) -> Expr {
                 [Atom(S(op)), e1, e2, e3] if op == "if" => If(Box::new(parse_expr(e1)), Box::new(parse_expr(e2)), Box::new(parse_expr(e3))),
                 [Atom(S(op)), vec_block @ ..] if op == "block" && (!vec_block.is_empty()).then(||true).expect("Invalid - block must have subexpressions!") =>
                     Block(vec_block.iter().map(|e| parse_expr(e)).collect()),
-                // [Atom(S(name)), vec_call @ ..] => FuncCall(name.clone(), vec_call.iter().map(|arg| Box::new(parse_expr(arg))).collect()),
+                [Atom(S(name)), vec_call @ ..] => FuncCall(name.clone(), vec_call.iter().map(|arg| Box::new(parse_expr(arg))).collect()),
                 _ => panic!("Invalid - parse error - unexpected structure! {:?}", vec),
             }
         },

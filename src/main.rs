@@ -27,19 +27,27 @@ fn main() -> std::io::Result<()> {
         "
 section .text
 extern snek_error
+extern snek_print
 global our_code_starts_here
 
 expect_bool:
 mov rdi, 5
-call snek_error
+mov rsp, r15
+jmp snek_error
 
 expect_numeric:
 mov rdi, 6
-call snek_error
+mov rsp, r15
+jmp snek_error
 
 overflow:
 mov rdi, 7
-call snek_error
+mov rsp, r15
+jmp snek_error
+
+def_print:
+call snek_print
+ret
 
 {}
 ",

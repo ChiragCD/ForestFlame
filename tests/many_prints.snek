@@ -1,0 +1,7 @@
+(fun (func) 1)
+(block
+    (print (print 24))
+    (print 2)
+    (print 3)
+    (func)
+)

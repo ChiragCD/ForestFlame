@@ -10,12 +10,12 @@ extern "C" {
 
 #[no_mangle]
 #[export_name = "\x01snek_error"]
-pub fn snek_error(errcode : i64) {
+pub extern "C" fn snek_error(errcode : i64) {
     let s = match errcode {
         5 => "Truth value expected (invalid argument)",
         6 => "Numeric value expected (invalid argument)",
         7 => "Arithmetic error (overflow)",
-        _ => "An error occurred {errcode}",
+        _ => "An unspecified error occurred",
     };
   eprintln!("Error - {s}");
   std::process::exit(1);
@@ -23,13 +23,11 @@ pub fn snek_error(errcode : i64) {
 
 #[no_mangle]
 #[export_name = "\x01snek_print"]
-fn snek_print(val : i64) -> i64 {
+pub extern "C" fn snek_print(val : i64) -> i64 {
   if val == 3 { println!("true"); }
   else if val == 1 { println!("false"); }
   else if val % 2 == 0 { println!("{}", val >> 1); }
-  else {
-    println!("Unknown value: {}", val);
-  }
+  else { println!("Unknown value: {}", val); }
   return val;
 }
 

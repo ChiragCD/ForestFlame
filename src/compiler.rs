@@ -1,3 +1,4 @@
+use std::collections::HashSet;
 use std::collections::HashMap;
 use std::cell::RefCell;
 use std::rc::Rc;
@@ -106,7 +107,6 @@ fn compile_if(expr1: &Expr, expr2: &Expr, expr3: &Expr, v: &mut Vec<Instr>, stac
     v.push(Jmp(Label(label_end.clone())));
     v.push(ILabel(Label(format!("{}:", label_false.clone()))));
     compile(expr3, v, stack, uid, namespace);
-    v.push(Jmp(Label(label_end.clone())));
     v.push(ILabel(Label(format!("{}:", label_end.clone()))));
 }
 
@@ -233,12 +233,12 @@ fn compile_binary_op(op: &BinaryOp, e1: &Expr, e2: &Expr, v: &mut Vec<Instr>, st
 }
 
 fn namespace_get(namespace: &Namespace, s: &String) -> Val {
-    namespace.h.get(s).expect(format!("Unbound variable identifier {}", s).as_str()).clone()
+    namespace.h.get(s).expect(format!("Invalid - Unbound variable identifier {}", s).as_str()).clone()
 }
 
 fn namespace_add(namespace: &mut Namespace, s: &String, loc: &Val, must_not_exist: bool) {
     let exists = namespace.h.insert(s.clone(), loc.clone()).is_some();
-    (!(must_not_exist && exists)).then(||0).expect("Duplicate binding");
+    (!(must_not_exist && exists)).then(||0).expect("Invalid - Duplicate binding");
 }
 
 fn compile_binding(binding: &Binding, v: &mut Vec<Instr>, stack: &mut i64, uid: &mut i64, namespace: &mut Namespace, must_exist: bool, must_not_exist: bool) {
@@ -255,7 +255,9 @@ fn compile_binding(binding: &Binding, v: &mut Vec<Instr>, stack: &mut i64, uid: 
 }
 
 fn compile_let(e: &Expr, vec: &Vec<Binding>, v: &mut Vec<Instr>, mut stack: i64, uid: &mut i64, namespace: &mut Namespace) {
+    let mut set = HashSet::new();
     let mut inner_namespace = namespace.clone();
+    _ = vec.iter().map(|Binding(s,_)| set.insert(s).then(||0).expect("Invalid - Duplicate binding")).collect::<Vec<_>>();
     _ = vec.iter().map(|binding| compile_binding(binding, v, &mut stack, uid, &mut inner_namespace, false, false)).collect::<Vec<_>>();
     compile(e, v, stack, uid, &mut inner_namespace);
 }
@@ -273,14 +275,16 @@ fn compile_def(e: &Expr, v: &mut Vec<Instr>, uid: &mut i64) {
     let mut namespace = Namespace{h: HashMap::new(), break_label: String::from(""), func: String::from(name)};
     let locations = vec![RDI, RSI, RDX, RCX, R8, R9];
     for i in 0..(min(6, vec_params.len())) {namespace_add(&mut namespace, &vec_params[i], &Reg(locations[i]), true)};
-    for i in 6..vec_params.len() {namespace_add(&mut namespace, &vec_params[i], &RegOffset(RSP, 8*(5-(i)) as i64), true)};
+    for i in 6..vec_params.len() {namespace_add(&mut namespace, &vec_params[i], &RegOffset(RSP, 8*(5-(i as i64))), true)};
     compile(action, v, STACK_BASE, uid, &mut namespace);
     v.push(Ret);
 }
 
 fn compile_call(name: &String, args: &Vec<Box<Expr>>, v: &mut Vec<Instr>, stack: &mut i64, uid: &mut i64, namespace: &mut Namespace) {
     let locations = vec![RDI, RSI, RDX, RCX, R8, R9];
+    let mut pushed_locs = vec![];
     for i in 0..(min(6, args.len())) {
+        pushed_locs.push(push(v, locations[i], stack));
         compile(&args[i], v, *stack, uid, namespace);
         load(v, locations[i], &Reg(RAX));
     };
@@ -293,9 +297,12 @@ fn compile_call(name: &String, args: &Vec<Box<Expr>>, v: &mut Vec<Instr>, stack:
         let length = *state.defs.get(name).expect("Invalid - function not found!");
         (length == args.len()).then(||0).expect("Invalid - call has wrong number of args!");
     });
-    v.push(IAdd(Reg(RSP), Imm(8**stack)));
-    v.push(Call(Label(format!("def_{}", name))));
     v.push(ISub(Reg(RSP), Imm(8**stack)));
+    v.push(Call(Label(format!("def_{}", name))));
+    v.push(IAdd(Reg(RSP), Imm(8**stack)));
+    for i in (0..(min(6, args.len()))).rev() {
+        load(v, locations[i], &pushed_locs.pop().expect("Unbalanced argument loading!"));
+    };
 }
 
 fn compile(e: &Expr, v: &mut Vec<Instr>, stack: i64, uid: &mut i64, namespace: &mut Namespace) {
@@ -312,6 +319,7 @@ fn compile(e: &Expr, v: &mut Vec<Instr>, stack: i64, uid: &mut i64, namespace: &
         Program(defs, e) => {
             _ = defs.iter().map(|def| compile_def(def, v, uid)).collect::<Vec<_>>();
             v.push(ILabel(Label(String::from("our_code_starts_here:"))));
+            v.push(IMov(Reg(R15), Reg(RSP)));
             compile(e, v, stack, uid, namespace);
             v.push(Ret);
         }
@@ -330,6 +338,7 @@ fn read_val(v: Val) -> String {
         Reg(RBP) => String::from("rbp"),
         Reg(R8) => String::from("r8"),
         Reg(R9) => String::from("r9"),
+        Reg(R15) => String::from("r15"),
         ValTrue => String::from("3"),
         ValFalse => String::from("1"),
         Imm(n) => n.to_string(),
@@ -373,7 +382,15 @@ fn stringify(vec: Vec<Instr>) -> String {
     }).collect::<Vec<String>>().iter().fold(String::new(), |accum, i| accum + "\n" + i)
 }
 
+fn define_library() {
+    STATE.with(|x| {
+        let mut state = x.borrow_mut();
+        state.defs.insert(String::from("print"), 1).is_none().then(||0).expect("Invalid - name is already in use!");
+    });
+}
+
 pub fn compile_expr(e: &Expr) -> String {
+    define_library();
     let mut instrs = Vec::new();
     let mut outer_namespace = Namespace{h: HashMap::new(), break_label: String::from(""), func: String::from("main")};
     let mut uid = 0;
