@@ -27,7 +27,7 @@ fn main() -> std::io::Result<()> {
         "
 section .text
 extern snek_error
-extern snek_print
+extern def_print
 global our_code_starts_here
 
 expect_bool:
@@ -44,10 +44,6 @@ overflow:
 mov rdi, 7
 mov rsp, r15
 jmp snek_error
-
-def_print:
-call snek_print
-ret
 
 {}
 ",

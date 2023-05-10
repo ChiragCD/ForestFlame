@@ -93,6 +93,7 @@ fn compile_zero_op(op: &ZeroOp, v: &mut Vec<Instr>, namespace: &mut Namespace) {
         OpFalse => load(v, RAX, &ValFalse),
         Input => (namespace.func == "main").then(|| load(v, RAX, &Reg(RDI))).expect("Invalid - cannot use input outside main"),
         Identifier(s) => load(v, RAX, &namespace_get(namespace, s)),
+        // TODO - may be no arg function
     }
 }
 
@@ -262,8 +263,8 @@ fn compile_let(e: &Expr, vec: &Vec<Binding>, v: &mut Vec<Instr>, mut stack: i64,
     compile(e, v, stack, uid, &mut inner_namespace);
 }
 
-fn compile_def(e: &Expr, v: &mut Vec<Instr>, uid: &mut i64) {
-    let (name, vec_params, action) = match e {
+fn update_def(e: &Expr) {
+    let (name, vec_params, _) = match e {
         FuncDef(name, vec_params, action) => (name, vec_params, action),
         _ => panic!("Invalid - Expected a definition!"),
     };
@@ -271,11 +272,18 @@ fn compile_def(e: &Expr, v: &mut Vec<Instr>, uid: &mut i64) {
         let mut state = x.borrow_mut();
         state.defs.insert(name.clone(), vec_params.len()).is_none().then(||0).expect("Invalid - name is already in use!");
     });
+}
+
+fn compile_def(e: &Expr, v: &mut Vec<Instr>, uid: &mut i64) {
+    let (name, vec_params, action) = match e {
+        FuncDef(name, vec_params, action) => (name, vec_params, action),
+        _ => panic!("Invalid - Expected a definition!"),
+    };
     v.push(ILabel(Label(format!("def_{}:", name))));
     let mut namespace = Namespace{h: HashMap::new(), break_label: String::from(""), func: String::from(name)};
     let locations = vec![RDI, RSI, RDX, RCX, R8, R9];
     for i in 0..(min(6, vec_params.len())) {namespace_add(&mut namespace, &vec_params[i], &Reg(locations[i]), true)};
-    for i in 6..vec_params.len() {namespace_add(&mut namespace, &vec_params[i], &RegOffset(RSP, 8*(5-(i as i64))), true)};
+    for i in 6..vec_params.len() {namespace_add(&mut namespace, &vec_params[i], &RegOffset(RSP, 4-(i as i64)), true)};
     compile(action, v, STACK_BASE, uid, &mut namespace);
     v.push(Ret);
 }
@@ -283,15 +291,19 @@ fn compile_def(e: &Expr, v: &mut Vec<Instr>, uid: &mut i64) {
 fn compile_call(name: &String, args: &Vec<Box<Expr>>, v: &mut Vec<Instr>, stack: &mut i64, uid: &mut i64, namespace: &mut Namespace) {
     let locations = vec![RDI, RSI, RDX, RCX, R8, R9];
     let mut pushed_locs = vec![];
+    let mut arg_locs = vec![];
+    for i in 0..(min(6, args.len())) {pushed_locs.push(push(v, locations[i], stack));};
     for i in 0..(min(6, args.len())) {
-        pushed_locs.push(push(v, locations[i], stack));
         compile(&args[i], v, *stack, uid, namespace);
-        load(v, locations[i], &Reg(RAX));
-    };
-    for i in (5..(max(0, args.len() as i64 - 1))).rev() {
-        compile(&args[i as usize], v, *stack, uid, namespace);
+        arg_locs.push(push(v, RAX, stack));
+    }
+    let stack_count = max(0, (args.len() as i64)-6) as i64;
+    *stack += 1 - ((*stack + stack_count) % 2);     // align stack
+    for i in (6..(max(0, args.len()))).rev() {
+        compile(&args[i], v, *stack, uid, namespace);
         _ = push(v, RAX, stack);
     };
+    for i in (0..(min(6, args.len()))).rev() {load(v, locations[i], &arg_locs.pop().expect("Unbalanced argument loading!"));};
     STATE.with(|x| {
         let state = x.borrow_mut();
         let length = *state.defs.get(name).expect("Invalid - function not found!");
@@ -317,6 +329,7 @@ fn compile(e: &Expr, v: &mut Vec<Instr>, stack: i64, uid: &mut i64, namespace: &
         FuncDef(_, _, _) => panic!("Invalid - unexpected function def in non global scope!"),
         FuncCall(name, args) => compile_call(name, args, v, &mut stack.clone(), uid, namespace),
         Program(defs, e) => {
+            _ = defs.iter().map(|def| update_def(def)).collect::<Vec<_>>();
             _ = defs.iter().map(|def| compile_def(def, v, uid)).collect::<Vec<_>>();
             v.push(ILabel(Label(String::from("our_code_starts_here:"))));
             v.push(IMov(Reg(R15), Reg(RSP)));

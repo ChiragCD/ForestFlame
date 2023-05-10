@@ -44,7 +44,7 @@ fn parse_zero_op(sexp: &Sexp) -> Expr {
 fn parse_def(sexp: &Sexp, reserved: &mut HashSet<String>) -> Expr {
     if let List(vec_def) = sexp { match &vec_def[..] {
         [Atom(S(op)), List(strings), e] if op == "fun" => {
-            let names: Vec::<String> = strings.iter().map(|s| if let Atom(S(name)) = s {return name.clone()}
+            let names: Vec::<String> = strings.iter().map(|s| if let Atom(S(name)) = s {return parse_identifier(name)}
                 else {panic!("Invalid - parse error - expected simple string in def!")}).collect();
             (!names.is_empty()).then(||0).expect("Invalid - parse error - func def expected name!");
             reserved.insert(names[0].clone()).then(||0).expect("Invalid - parse error - name is already in use!");

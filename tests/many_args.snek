@@ -1,0 +1,2 @@
+(fun (f a b c d e g h i j k l) (+ l (+ k (+ j (+ i (+ h g))))))
+(f 1 2 3 4 5 7 8 9 input 11 12)

@@ -22,7 +22,7 @@ pub extern "C" fn snek_error(errcode : i64) {
 }
 
 #[no_mangle]
-#[export_name = "\x01snek_print"]
+#[export_name = "\x01def_print"]
 pub extern "C" fn snek_print(val : i64) -> i64 {
   if val == 3 { println!("true"); }
   else if val == 1 { println!("false"); }
