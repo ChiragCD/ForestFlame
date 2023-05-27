@@ -1,0 +1,16 @@
+(fun (add_points p1 p2) (
+    let ((p_new (link))) ( block
+        (fill (link_from p_new) (+ (deref (link_from p1)) (deref (link_from p2))))
+        (fill (link_to p_new) (+ (deref (link_to p1)) (deref (link_to p2))))
+        p_new
+    )
+) )
+(let ((p1 (link)) (p2 (link)) (p3 (link))) (block
+    (fill (link_from p1) 1)
+    (fill (link_to p1) 2)
+    (fill (link_from p2) 3)
+    (fill (link_to p2) 4)
+    (set! p3 (add_points p1 p2))
+    (print p3)
+    (deref (link_to p3))
+))

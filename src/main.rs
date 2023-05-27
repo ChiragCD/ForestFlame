@@ -21,29 +21,20 @@ fn main() -> std::io::Result<()> {
     let sexp = parse(&in_contents).expect("Invalid - failed to parse sexp");
     let expr = parse_program(&sexp);
 
-    let result = compile_expr(&expr);
+    let result = compile_program(&expr);
 
     let asm_program = format!(
         "
 section .text
-extern snek_error
+
+extern snek_error, raise_error
+extern failed_setup, no_more_mem, type_error, err_bad_access, expect_bool, expect_numeric, overflow
 extern def_print
+extern heap_setup
+extern def_array, def_link, def_link_from, def_link_to
+extern alloc, def_fill, def_deref, def_index
+
 global our_code_starts_here
-
-expect_bool:
-mov rdi, 5
-mov rsp, r15
-jmp snek_error
-
-expect_numeric:
-mov rdi, 6
-mov rsp, r15
-jmp snek_error
-
-overflow:
-mov rdi, 7
-mov rsp, r15
-jmp snek_error
 
 {}
 ",

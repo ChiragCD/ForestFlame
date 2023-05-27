@@ -1,0 +1,3 @@
+(let ((x (array 5))) (block
+    (link_to x)
+))

@@ -1,0 +1,7 @@
+(let ((x (array 5)) (i 1)) ( block
+    (fill (index x 0) 1)
+    ( loop (if (= i 5) (break x) ( block
+        (fill (index x i) (+ 1 (deref (index x (- i 1)))))
+        (set! i (+ i 1))
+    ) ) )
+) )

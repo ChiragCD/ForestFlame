@@ -1,0 +1,4 @@
+(let ((x (link))) (block
+    (fill (link_from x) 1)
+    (fill (link_to x) 2)
+))

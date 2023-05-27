@@ -1,0 +1,1 @@
+(let ((x (array 5))) (deref (index x 0)))

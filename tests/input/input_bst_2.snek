@@ -1,0 +1,60 @@
+(fun (make_node val) (block
+    (let ((node (link)) (children (link))) ( block
+        (fill (link_from children) 0)
+        (fill (link_to children) 0)
+        (fill (link_from node) val)
+        (fill (link_to node) children)
+        node
+    ) )
+) )
+(fun (get_left node) ( let ((children (deref (link_to node))))
+    (deref (link_from children))
+) )
+(fun (get_right node) ( let ((children (deref (link_to node))))
+    (deref (link_to children))
+) )
+(fun (get_val node) (deref (link_from node)))
+(fun (set_val node val) (fill (link_from node) val))
+(fun (set_left node val) ( let ((children (deref (link_to node))))
+    (fill (link_from children) val)
+) )
+(fun (set_right node val) ( let ((children (deref (link_to node))))
+    (fill (link_to children) val)
+) )
+(fun (insert tree node) (block
+    (if (= (get_val node) (get_val tree)) 0 (
+    if (< (get_val node) (get_val tree))
+        (if (isnum (get_left tree)) (set_left tree node) (insert (get_left tree) node))
+        (if (isnum (get_right tree)) (set_right tree node) (insert (get_right tree) node))
+    ))
+))
+(fun (check_present tree val) (block
+    (if (isnum tree) false (
+        if (= val (get_val tree)) true (
+            if (< val (get_val tree))
+                (check_present (get_left tree) val)
+                (check_present (get_right tree) val)
+        )
+    ) )
+))
+(fun (make_bst node_list size) (
+    let ((tree (deref (index node_list 0)))) (block
+        (let ((i 1)) (loop (if (= i size) (break tree) (block
+            (insert tree (deref (index node_list i)))
+            (set! i (+ i 1))
+        ))))
+        tree
+    )
+))
+(let ((x (array 5))) (block
+    (fill (index x 0) (make_node 4))
+    (fill (index x 1) (make_node 5))
+    (fill (index x 2) (make_node 2))
+    (fill (index x 3) (make_node 1))
+    (fill (index x 4) (make_node 3))
+    (let ((tree (make_bst x 5))) (block
+        (print tree)
+        (print (check_present tree -1))
+        (print (check_present tree 2))
+    ))
+) )

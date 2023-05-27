@@ -14,7 +14,7 @@ use Instr::*;
 use Val::*;
 use Register::*;
 
-const STACK_BASE: i64 = 2;
+const STACK_BASE: i64 = 2;      // for alignment, keep even
 
 #[derive(Debug, Clone)]
 struct Namespace {
@@ -56,15 +56,15 @@ fn fail_overflow(v: &mut Vec<Instr>) {
     v.push(Jo(Label(String::from("overflow"))));
 }
 
-fn get_type(val: &Val) -> Type {
+fn get_type(_val: &Val) -> Type {
     return Unknown;
-    if matches!(*val, Imm(_)) {return Num};
-    if matches!(*val, ValFalse) {return Bool};
-    if matches!(*val, ValTrue) {return Bool};
-    STATE.with(|x| {
-        let state = x.borrow_mut();
-        *state.types.get(&val.clone()).unwrap_or_else(|| &Unknown)
-    })
+    // if matches!(*val, Imm(_)) {return Num};
+    // if matches!(*val, ValFalse) {return Bool};
+    // if matches!(*val, ValTrue) {return Bool};
+    // STATE.with(|x| {
+    //     let state = x.borrow_mut();
+    //     *state.types.get(&val.clone()).unwrap_or_else(|| &Unknown)
+    // })
 }
 
 fn set_type(val: &Val, datatype: Type) {
@@ -93,7 +93,6 @@ fn compile_zero_op(op: &ZeroOp, v: &mut Vec<Instr>, namespace: &mut Namespace) {
         OpFalse => load(v, RAX, &ValFalse),
         Input => (namespace.func == "main").then(|| load(v, RAX, &Reg(RDI))).expect("Invalid - cannot use input outside main"),
         Identifier(s) => load(v, RAX, &namespace_get(namespace, s)),
-        // TODO - may be no arg function
     }
 }
 
@@ -306,15 +305,13 @@ fn compile_call(name: &String, args: &Vec<Box<Expr>>, v: &mut Vec<Instr>, stack:
     for i in (0..(min(6, args.len()))).rev() {load(v, locations[i], &arg_locs.pop().expect("Unbalanced argument loading!"));};
     STATE.with(|x| {
         let state = x.borrow_mut();
-        let length = *state.defs.get(name).expect("Invalid - function not found!");
+        let length = *state.defs.get(name).expect(format!("Invalid - function {} not found!", name).as_str());
         (length == args.len()).then(||0).expect("Invalid - call has wrong number of args!");
     });
     v.push(ISub(Reg(RSP), Imm(8**stack)));
     v.push(Call(Label(format!("def_{}", name))));
     v.push(IAdd(Reg(RSP), Imm(8**stack)));
-    for i in (0..(min(6, args.len()))).rev() {
-        load(v, locations[i], &pushed_locs.pop().expect("Unbalanced argument loading!"));
-    };
+    for i in (0..(min(6, args.len()))).rev() {load(v, locations[i], &pushed_locs.pop().expect("Unbalanced argument loading!"));};
 }
 
 fn compile(e: &Expr, v: &mut Vec<Instr>, stack: i64, uid: &mut i64, namespace: &mut Namespace) {
@@ -328,14 +325,7 @@ fn compile(e: &Expr, v: &mut Vec<Instr>, stack: i64, uid: &mut i64, namespace: &
         Block(vec) => vec.iter().map(|e| compile(e, v, stack, uid, namespace)).collect(),
         FuncDef(_, _, _) => panic!("Invalid - unexpected function def in non global scope!"),
         FuncCall(name, args) => compile_call(name, args, v, &mut stack.clone(), uid, namespace),
-        Program(defs, e) => {
-            _ = defs.iter().map(|def| update_def(def)).collect::<Vec<_>>();
-            _ = defs.iter().map(|def| compile_def(def, v, uid)).collect::<Vec<_>>();
-            v.push(ILabel(Label(String::from("our_code_starts_here:"))));
-            v.push(IMov(Reg(R15), Reg(RSP)));
-            compile(e, v, stack, uid, namespace);
-            v.push(Ret);
-        }
+        Program(_, _) => panic!("Invalid - unexpected program structure within program!"),
     }
 }
 
@@ -355,9 +345,9 @@ fn read_val(v: Val) -> String {
         ValTrue => String::from("3"),
         ValFalse => String::from("1"),
         Imm(n) => n.to_string(),
-        RegOffset(RSP, n) => String::from(format!("[rsp - {}]", 8*n)),
+        RegOffset(r, n) => String::from(format!("[{} - {}]", read_val(Reg(r)), 8*n)),
         Label(s) => s,
-        _ => panic!("Bad code generated!"),
+        // _ => panic!("Bad code generated!"),
     }
 }
 
@@ -398,15 +388,32 @@ fn stringify(vec: Vec<Instr>) -> String {
 fn define_library() {
     STATE.with(|x| {
         let mut state = x.borrow_mut();
+        state.defs.insert(String::from("link"), 0).is_none().then(||0).expect("Invalid - name is already in use!");
         state.defs.insert(String::from("print"), 1).is_none().then(||0).expect("Invalid - name is already in use!");
+        state.defs.insert(String::from("array"), 1).is_none().then(||0).expect("Invalid - name is already in use!");
+        state.defs.insert(String::from("deref"), 1).is_none().then(||0).expect("Invalid - name is already in use!");
+        state.defs.insert(String::from("fill"), 2).is_none().then(||0).expect("Invalid - name is already in use!");
+        state.defs.insert(String::from("link_from"), 1).is_none().then(||0).expect("Invalid - name is already in use!");
+        state.defs.insert(String::from("link_to"), 1).is_none().then(||0).expect("Invalid - name is already in use!");
+        state.defs.insert(String::from("index"), 2).is_none().then(||0).expect("Invalid - name is already in use!");
     });
 }
 
-pub fn compile_expr(e: &Expr) -> String {
+pub fn compile_program(e: &Expr) -> String {
     define_library();
     let mut instrs = Vec::new();
     let mut outer_namespace = Namespace{h: HashMap::new(), break_label: String::from(""), func: String::from("main")};
     let mut uid = 0;
+    let (defs, e) = match e {
+        Program(defs, e) => (defs, e),
+        _ => panic!("Expected program structure!"),
+    };
+    _ = defs.iter().map(|def| update_def(def)).collect::<Vec<_>>();
+    _ = defs.iter().map(|def| compile_def(def, &mut instrs, &mut uid)).collect::<Vec<_>>();
+    instrs.push(ILabel(Label(String::from("our_code_starts_here:"))));
+    instrs.push(Call(Label(format!("heap_setup"))));
+    instrs.push(IMov(RegOffset(RAX, 0), Reg(RSP)));
     compile(e, &mut instrs, STACK_BASE, &mut uid, &mut outer_namespace);
+    instrs.push(Ret);
     stringify(instrs)
 }

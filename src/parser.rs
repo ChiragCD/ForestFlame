@@ -24,21 +24,9 @@ fn parse_bind(vec: &Vec<Sexp>) -> Vec<Binding> {
 }
 
 fn parse_identifier(s: &str) -> String {
-    let keywords = HashSet::from(["true", "false", "input", "let", "set!", "if", "block", "loop", "break", "add1", "sub1", "isnum", "isbool"]);
+    let keywords = HashSet::from(["true", "false", "input", "let", "set!", "if", "block", "loop", "break", "add1", "sub1", "isnum", "isbool", "array", "link", "fill", "deref"]);
     (!keywords.contains(s)).then(||0).expect("Invalid - parse error - keyword or function name used as identifier!");
     String::from(s)
-}
-
-fn parse_zero_op(sexp: &Sexp) -> Expr {
-    match sexp {
-        Atom(I(n)) => if *n <= 4611686018427387903 && *n >= -4611686018427387904 {EZeroOp(Number(2*i64::try_from(*n).expect("Invalid - parse error - number not valid or overflow!")))}
-                            else {panic!("Invalid - parse error - number not valid or overflow!")},
-        Atom(S(op)) if op == "true" => EZeroOp(OpTrue),
-        Atom(S(op)) if op == "false" => EZeroOp(OpFalse),
-        Atom(S(op)) if op == "input" => EZeroOp(Input),
-        Atom(S(s)) => EZeroOp(Identifier(s.clone())),
-        _ => panic!("Invalid - parse error - tried to treat list Sexp as atom!"),
-    }
 }
 
 fn parse_def(sexp: &Sexp, reserved: &mut HashSet<String>) -> Expr {
@@ -46,18 +34,26 @@ fn parse_def(sexp: &Sexp, reserved: &mut HashSet<String>) -> Expr {
         [Atom(S(op)), List(strings), e] if op == "fun" => {
             let names: Vec::<String> = strings.iter().map(|s| if let Atom(S(name)) = s {return parse_identifier(name)}
                 else {panic!("Invalid - parse error - expected simple string in def!")}).collect();
-            (!names.is_empty()).then(||0).expect("Invalid - parse error - func def expected name!");
+            names.first().expect("Invalid - parse error - func def expected name!");
             reserved.insert(names[0].clone()).then(||0).expect("Invalid - parse error - name is already in use!");
             return FuncDef(names[0].clone(), names[1..].to_vec(), Box::new(parse_expr(e)))
         },
-        _ => panic!("Invalid - parse error - failed to match def!"),
+        _ => (),
     } }
     panic!("Invalid - parse error - failed to match def!");
 }
 
 fn parse_expr(sexp: &Sexp) -> Expr {
     match sexp {
-        Atom(_) => parse_zero_op(sexp),
+        Atom(item) => match item {
+            I(n) => if *n <= 4611686018427387903 && *n >= -4611686018427387904 {EZeroOp(Number(2*i64::try_from(*n).expect("Invalid - parse error - number not valid or overflow!")))}
+                                else {panic!("Invalid - parse error - number not valid or overflow!")},
+            S(op) if op == "true" => EZeroOp(OpTrue),
+            S(op) if op == "false" => EZeroOp(OpFalse),
+            S(op) if op == "input" => EZeroOp(Input),
+            S(s) => EZeroOp(Identifier(s.clone())),
+            F(_) => panic!("Floats not implemented!"),
+        },
         List(vec) => {
             match &vec[..] {
                 [Atom(S(op)), e] if op == "add1" => EUnitaryOp(Add1, Box::new(parse_expr(e))),

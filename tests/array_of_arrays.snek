@@ -1,0 +1,15 @@
+(let ((x (array 5)) (i 0) (count 1)) (
+    loop (if (= i 5) (break x) ( block
+        (let ((y (array 5)))
+            (fill (index x i) y)
+        )
+        (let ((j 0)) (
+            loop (if (= j 5) (break j) ( block
+                (fill (index (deref (index x i)) j) count)
+                (set! count (+ count 1))
+                (set! j (+ j 1))
+            ) )
+        ) )
+        (set! i (+ i 1))
+    ) )
+) )
