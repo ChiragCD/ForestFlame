@@ -105,3 +105,68 @@ fn main() {
     let i : u64 = unsafe { our_code_starts_here(input, HEAP_START, HEAP_END) };
     snek_print(i);
 }
+
+
+/*
+/// This function should trigger garbage collection and return the updated heap pointer (i.e., the new
+/// value of `%r15`). See [`snek_try_gc`] for a description of the meaning of the arguments.
+#[export_name = "\x01snek_gc"]
+pub unsafe fn snek_gc(
+    heap_ptr: *const u64,
+    stack_base: *const u64,
+    curr_rbp: *const u64,
+    curr_rsp: *const u64,
+) -> *const u64 {
+    // print_heap();
+    // snek_print_stack(stack_base, curr_rbp, curr_rsp);
+    let mut base_set = HashSet::new();
+    let mut seen_set = HashSet::new();
+    gc_stack(stack_base, curr_rsp, &mut base_set, false);
+    // println!("Got base set!");
+    // println!("{:?}", base_set);
+    for pointer in base_set.iter() {snek_str(*pointer, &mut HashSet::new(), &mut seen_set);}
+    // println!("{:?}", seen_set);
+    let mut new_addr = HEAP_START;
+    let mut relocator_reversed = HashMap::new();
+    let mut seen_list = seen_set.iter().map(|i| *i).collect::<Vec<u64>>();
+    seen_list.sort();
+    for pointer in seen_list.iter() {
+        let old_addr = (*pointer - 1) as *mut u64;
+        // println!("Moving {} to {}", old_addr as usize, new_addr as usize);
+        old_addr.write(new_addr as u64);
+        relocator_reversed.insert(new_addr as u64, old_addr as u64);
+        new_addr = new_addr.add(old_addr.add(1).read() as usize + 2);
+        // println!("Updating new addr to {} for size {}", new_addr as usize, old_addr.add(1).read() as usize);
+    }
+    let updated_heap_ptr = new_addr;
+    for pointer in seen_list.iter() {
+        let addr = (*pointer - 1) as *mut u64;
+        let size = addr.add(1).read() as usize;
+        for i in 0..size {
+            let val = addr.add(2 + i).read() as u64;
+            if val % 4 == 1 && val != 1 {
+                // println!("Updating a ref! {} {} {}", addr as u64, i, size);
+                let loc = (val - 1) as *const u64;
+                addr.add(2 + i).write(loc.read() + 1);
+            }
+        }
+    }
+    gc_stack(stack_base, curr_rsp, &mut base_set, true);
+    let mut locations = relocator_reversed.keys().map(|i| *i as u64).collect::<Vec<u64>>();
+    locations.sort();
+    // println!("HI");
+    // println!("{:?}", locations);
+    for location in locations.iter() {
+        // println!("{} from {}", location, relocator_reversed[&(location)]);
+        let new_addr = *location as *mut u64;
+        let old_addr = relocator_reversed[&(location)] as *const u64;
+        let size = old_addr.add(1).read() as usize;
+        new_addr.write(0);
+        for i in 0..(size+1) {
+            new_addr.add(1 + i).write(old_addr.add(1 + i).read());
+        }
+        // println!("Relocated {}!", size);
+    }
+    updated_heap_ptr
+}
+ */
