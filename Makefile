@@ -26,8 +26,12 @@ test:
 	cargo build
 	cargo test
 
+profile:
+	cargo build
+	cargo test -- --show-output
+
 clean:
-	rm -f tests/*.a tests/*.s tests/*.run tests/*.o
+	rm -f tests/*.a tests/*.s tests/*.run tests/*.o tests/callgrind.out
 
 submit:
 	rm -f ./*.zip 2>/dev/null

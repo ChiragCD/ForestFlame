@@ -1,5 +1,4 @@
-(
-    (fun (fact n)
+(fun (fact n)
   (let
     ((i 1) (acc 1))
     (loop
@@ -14,4 +13,3 @@
   )
 )
 (fact input)
-)

@@ -4,19 +4,27 @@ extern no_more_mem, err_bad_access, create_heap, failed_setup
 
 global alloc, def_fill, def_deref, heap_setup
 
+; heap_setup:
+;     mov rax, rsi
+;     jz failed_setup
+;     mov [rsp - 16], rdi
+;     mov [rsp - 24], rsi
+;     sub rsp, 24
+;     call create_heap
+;     add rsp, 24
+;     mov rdi, [rsp - 16]
+;     mov rsi, [rsp - 24]
+;     sub rsi, 16
+;     mov [rax + 8], rsi
+;     mov r15, rax
+; ret
+
 heap_setup:
-    mov rax, rsi
-    jz failed_setup
-    mov [rsp - 16], rdi
-    mov [rsp - 24], rsi
-    sub rsp, 24
-    call create_heap
-    add rsp, 24
-    mov rdi, [rsp - 16]
-    mov rsi, [rsp - 24]
-    sub rsi, 16
-    mov [rax + 8], rsi
-    mov r15, rax
+    mov r15, rsi
+    sub rdx, rsi
+    sub rdx, 16
+    mov [r15 + 8], rdx
+    mov rax, r15
 ret
 
 alloc:
